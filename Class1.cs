@@ -197,13 +197,15 @@ public class MissileHPGenerator : MonoBehaviour
 
             foreach (var kvp in missileParts)
             {
-                writer.WriteLine($"@PART[{kvp.Key}]:NEEDS[BDArmory]:FOR[BDAmissileHPtweak]");
+                // 将零件名称中的空格替换为 ?，避免 ModuleManager 解析错误
+                string partName = kvp.Key.Replace(' ', '?');
+
+                writer.WriteLine($"@PART[{partName}]:NEEDS[BDArmory]:FOR[BDAmissileHPtweak]");
                 writer.WriteLine("{");
                 writer.WriteLine("\t%MODULE[HitpointTracker]");
                 writer.WriteLine("\t{");
                 writer.WriteLine($"\t\tmaxHitPoints = {kvp.Value.hp:F0}");
                 writer.WriteLine($"\t\tArmorThickness = {kvp.Value.armor:F0}");
-                writer.WriteLine("\t\tExplodeMode = Default");
                 writer.WriteLine("\t}");
                 writer.WriteLine("}");
             }
