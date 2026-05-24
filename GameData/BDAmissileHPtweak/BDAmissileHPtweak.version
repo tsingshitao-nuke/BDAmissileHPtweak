@@ -1,10 +1,10 @@
 {
   "NAME": "BDAmissileHPtweak",
-  "URL": "https://github.com/tsingshitao-nuke/Procedural-Airships/blob/main/GameData/Procedural%20Airships/Version/ProceduralAirships.version",
-  "DOWNLOAD": "https://spacedock.info/mod/4270/Procedural%20Airships/download",
+  "URL": "https://github.com/tsingshitao-nuke/BDAmissileHPtweak/blob/main/GameData/BDAmissileHPtweak/BDAmissileHPtweak.version",
+  "DOWNLOAD": "https://github.com/tsingshitao-nuke/BDAmissileHPtweak/releases/latest",
   "VERSION": {
-    "MAJOR": 1,
-    "MINOR": 2,
+    "MAJOR": 0,
+    "MINOR": 1,
     "PATCH": 0,
     "BUILD": 0
   },
