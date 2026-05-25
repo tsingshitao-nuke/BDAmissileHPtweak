@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
 
@@ -21,19 +22,15 @@ public class MissileHPGenerator : MonoBehaviour
         }
     }
 
-    // 插件 DLL 所在目录（如 .../BDAmissileHPtweak/Plugins）
     private static readonly string PluginDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-    // Mod 根目录（Plugins 的上一级，如 .../BDAmissileHPtweak）
     private static readonly string ModRootDir = Directory.GetParent(PluginDir).FullName;
 
     private const string PatchFileName = "BDAmissileHPtweak_generated.cfg";
     private const string HashFileName = "BDAmissileHPtweak_generated.hash";
     private const string SettingsFileName = "settings.cfg";
 
-    // settings.cfg 和生成的 .cfg 补丁文件放在 Mod 根目录
     private static readonly string SettingsFile = Path.Combine(ModRootDir, SettingsFileName);
     private static readonly string PatchFilePath = Path.Combine(ModRootDir, PatchFileName);
-    // .hash 文件放在 Plugins 内
     private static readonly string HashFilePath = Path.Combine(PluginDir, HashFileName);
 
     private float hpPerMass = 1000f;
@@ -43,6 +40,9 @@ public class MissileHPGenerator : MonoBehaviour
     private float armorPerMass = 20f;
     private float armorMassThreshold = 0.5f;
     private float minArmor = 10f;
+
+    // 排除模块列表，零件只要含有其中任意模块就会被跳过
+    private List<string> excludeModules = new List<string>();
 
     private void Awake()
     {
@@ -122,9 +122,19 @@ public class MissileHPGenerator : MonoBehaviour
                         float.TryParse(node.GetValue("armorMassThreshold"), out armorMassThreshold);
                     if (node.HasValue("minArmor"))
                         float.TryParse(node.GetValue("minArmor"), out minArmor);
+
+                    // 解析排除模块列表（逗号分隔）
+                    if (node.HasValue("excludeModules"))
+                    {
+                        string raw = node.GetValue("excludeModules");
+                        excludeModules = raw.Split(',')
+                                           .Select(s => s.Trim())
+                                           .Where(s => !string.IsNullOrEmpty(s))
+                                           .ToList();
+                    }
                 }
             }
-            Debug.Log($"[BDAmissileHPtweak] Settings loaded: HP(perMass={hpPerMass}, thresh={hpMassThreshold}, min={minHP}), Armor(perMass={armorPerMass}, thresh={armorMassThreshold}, min={minArmor})");
+            Debug.Log($"[BDAmissileHPtweak] Settings loaded. Exclude modules: {(excludeModules.Count > 0 ? string.Join(", ", excludeModules) : "none")}");
         }
         else
         {
@@ -162,23 +172,45 @@ public class MissileHPGenerator : MonoBehaviour
                 continue;
 
             ConfigNode[] modules = ap.partConfig.GetNodes("MODULE");
+
+            // 检查是否含有排除模块
+            bool excluded = false;
+            foreach (ConfigNode m in modules)
+            {
+                string modName = m.GetValue("name");
+                if (!string.IsNullOrEmpty(modName) && excludeModules.Contains(modName.Trim(), System.StringComparer.OrdinalIgnoreCase))
+                {
+                    excluded = true;
+                    Debug.Log($"[BDAmissileHPtweak]   >>> EXCLUDED! {ap.name} (contains exclude module '{modName}')");
+                    break;
+                }
+            }
+            if (excluded) continue;
+
+            // 检查是否有 MissileLauncher
+            bool hasLauncher = false;
             foreach (ConfigNode modNode in modules)
             {
                 if (modNode.GetValue("name") == "MissileLauncher")
                 {
-                    float mass = 0f;
-                    float.TryParse(ap.partConfig.GetValue("mass"), out mass);
-                    float hp = CalculateHitPoints(mass);
-                    float armor = CalculateArmor(mass);
-                    missileParts[ap.name] = new MissileData(hp, armor);
-                    matched++;
-                    Debug.Log($"[BDAmissileHPtweak]   >>> MATCH! {ap.name} (mass={mass:F3}) -> HP={hp}, Armor={armor}");
+                    hasLauncher = true;
                     break;
                 }
             }
+
+            if (hasLauncher)
+            {
+                float mass = 0f;
+                float.TryParse(ap.partConfig.GetValue("mass"), out mass);
+                float hp = CalculateHitPoints(mass);
+                float armor = CalculateArmor(mass);
+                missileParts[ap.name] = new MissileData(hp, armor);
+                matched++;
+                Debug.Log($"[BDAmissileHPtweak]   >>> MATCH! {ap.name} (mass={mass:F3}) -> HP={hp}, Armor={armor}");
+            }
         }
 
-        Debug.Log($"[BDAmissileHPtweak] Found {matched} missile parts.");
+        Debug.Log($"[BDAmissileHPtweak] Found {matched} missile parts (after exclusions).");
 
         if (missileParts.Count == 0)
         {
@@ -186,7 +218,6 @@ public class MissileHPGenerator : MonoBehaviour
             return;
         }
 
-        // 确保 Mod 根目录存在
         if (!Directory.Exists(ModRootDir))
             Directory.CreateDirectory(ModRootDir);
 
@@ -197,7 +228,6 @@ public class MissileHPGenerator : MonoBehaviour
 
             foreach (var kvp in missileParts)
             {
-                // 将零件名称中的空格替换为 ?，避免 ModuleManager 解析错误
                 string partName = kvp.Key.Replace(' ', '?');
 
                 writer.WriteLine($"@PART[{partName}]:NEEDS[BDArmory]:FOR[BDAmissileHPtweak]");
@@ -206,6 +236,7 @@ public class MissileHPGenerator : MonoBehaviour
                 writer.WriteLine("\t{");
                 writer.WriteLine($"\t\tmaxHitPoints = {kvp.Value.hp:F0}");
                 writer.WriteLine($"\t\tArmorThickness = {kvp.Value.armor:F0}");
+                writer.WriteLine("\t\tExplodeMode = Default");
                 writer.WriteLine("\t}");
                 writer.WriteLine("}");
             }
